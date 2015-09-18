@@ -8,6 +8,7 @@ AWS.config.region = "us-east-1";
 var errHandler = function(err) { console.error("ERR:"+err); };
 var ecs = new AWS.ECS();
 var sqs = new AWS.SQS();
+var cmdQueue = null;
 
 var runTaskPromises = [];
 var numTasks = 0;
@@ -18,21 +19,6 @@ if (process.argv.length < 3) {
 }
 numTasks = parseInt(process.argv[2]);
 
-var count;
-while (numTasks > 0) {
-  if (numTasks > 10) {
-    count = 10;
-  } else {
-    count = numTasks;
-  }
-  numTasks -= count;
-
-  runTaskPromises.push(Q.ninvoke(ecs, "runTask", {
-    taskDefinition: "radiatus",
-    cluster: "radiatus",
-    count: count
-  }));
-}
 
 Q.all(runTaskPromises).then(function(data) {
   console.log(data);
@@ -64,9 +50,32 @@ Q.all(runTaskPromises).then(function(data) {
 }).then(function(data) {
   console.log(data);
   cmdQueue = new AWS.SQS({ params: { QueueUrl: data.QueueUrl } });
-  return Q.ninvoke(sqs, "sendMessage", {
-    QueueUrl: data.QueueUrl,
+
+  var count;
+  while (numTasks > 0) {
+    if (numTasks > 10) {
+      count = 10;
+    } else {
+      count = numTasks;
+    }
+    numTasks -= count;
+
+    runTaskPromises.push(Q.ninvoke(ecs, "runTask", {
+      taskDefinition: "radiatus",
+      cluster: "radiatus",
+      count: count
+    }));
+  }
+
+  return Q.all(runTaskPromises);
+}).then(function(data) {
+  console.log(data);
+
+  // @TODO insert pause
+  /**
+  return Q.ninvoke(cmdQueue, "sendMessage", {
     MessageBody: "start",
     DelaySeconds: 0
   }); 
+  **/
 }).catch(errHandler);
