@@ -4,8 +4,7 @@
   "description": "playplay",
   "main": "src/index.js",
   "scripts": {
-    "start": "gulp build && node build/index.js",
-    "test": "gulp test"
+    "start": "node src/index.js 0.2 10"
   },
   "repository": {
     "type": "git",

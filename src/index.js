@@ -5,28 +5,48 @@ var Q = require("q");
 AWS.config.region = "us-east-1";
 var errHandler = function(err) { console.error("ERR:"+err); };
 var sqs = new AWS.SQS();
-var statsQueue = null;
-var msgQueue = null;
 
-Q.ninvoke(sqs, "createQueue", {
-  QueueName: "stats",
-  Attributes: {
-    ReceiveMessageWaitTimeSeconds: "0", //shortpoll = 0, longpoll=20
-    VisibilityTimeout: "0"
-  }
-}).then(function(data) {
-  statsQueue = new AWS.SQS({ params: { QueueUrl: data.QueueUrl } });
-  console.log(data);
-  return Q.ninvoke(sqs, "createQueue", {
-    QueueName: "messages",
-    Attributes: {
-      ReceiveMessageWaitTimeSeconds: "0", //shortpoll = 0, longpoll=20
-      VisibilityTimeout: "0"
+var queueUrls = {};
+var writeRatio = 0;
+var count, totalOps = 0;
+var startTime, endTime, duration;
+
+if (process.argv.length < 4) {
+  console.log("Usage: node index.js [WRITES] [TOTAL]");
+  process.exit(0);
+}
+writeRatio = parseFloat(process.argv[2]);
+totalOps = parseInt(process.argv[3]);
+
+Q.ninvoke(sqs, "listQueues", {}).then(function(data) {
+  for (var i = 0; i < data.QueueUrls.length; i++) {
+    if (data.QueueUrls[i].indexOf("commands") > -1) {
+      queueUrls.commands = data.QueueUrls[i];
+    } else if (data.QueueUrls[i].indexOf("messages") > -1) {
+      queueUrls.messages = data.QueueUrls[i];
+    } else if (data.QueueUrls[i].indexOf("stats") > -1) {
+      queueUrls.stats = data.QueueUrls[i];
     }
-  });
-}).then(function(data) {
-  msgQueue = new AWS.SQS({ params: { QueueUrl: data.QueueUrl } });
-  console.log(data);
+  }
+  console.log(queueUrls);
 }).catch(errHandler);
 
 
+startTime = process.hrtime();
+
+for (count = 0; count < totalOps; count++) {
+  if (Math.random() < writeRatio) { // Write
+    console.log("Write");
+  } else { // Read
+    console.log("Read");
+  }
+}
+
+
+
+endTime = process.hrtime();
+console.log(startTime);
+console.log(endTime);
+console.log(writeRatio);
+
+// Write to stats: #ops / (endTime - startTime)

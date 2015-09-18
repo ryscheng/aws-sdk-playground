@@ -29,7 +29,7 @@ Q.ninvoke(ecs, "createCluster", {
 }).then(function(data) {
   console.log(data);
   return Q.ninvoke(ec2, "runInstances", {
-    DryRun: true,
+    DryRun: false,
     ImageId: "ami-b540eade",
     MinCount: 1,
     MaxCount: 1,
