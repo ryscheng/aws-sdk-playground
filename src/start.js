@@ -8,7 +8,7 @@ AWS.config.region = "us-east-1";
 var errHandler = function(err) { console.error("ERR:"+err); };
 var ecs = new AWS.ECS();
 var sqs = new AWS.SQS();
-var cmdQueue = null;
+var startCmdQueue = null;
 
 var runTaskPromises = [];
 var numTasks = 0;
@@ -41,7 +41,7 @@ Q.all(runTaskPromises).then(function(data) {
 }).then(function(data) {
   console.log(data);
   return Q.ninvoke(sqs, "createQueue", {
-    QueueName: "commands",
+    QueueName: "stopCmd",
     Attributes: {
       ReceiveMessageWaitTimeSeconds: "0", //shortpoll = 0, longpoll=20
       VisibilityTimeout: "0"
@@ -49,7 +49,16 @@ Q.all(runTaskPromises).then(function(data) {
   });
 }).then(function(data) {
   console.log(data);
-  cmdQueue = new AWS.SQS({ params: { QueueUrl: data.QueueUrl } });
+  return Q.ninvoke(sqs, "createQueue", {
+    QueueName: "startCmd",
+    Attributes: {
+      ReceiveMessageWaitTimeSeconds: "0", //shortpoll = 0, longpoll=20
+      VisibilityTimeout: "0"
+    }
+  });
+}).then(function(data) {
+  console.log(data);
+  startCmdQueue = new AWS.SQS({ params: { QueueUrl: data.QueueUrl } });
 
   var count;
   while (numTasks > 0) {
@@ -73,7 +82,7 @@ Q.all(runTaskPromises).then(function(data) {
 
   // @TODO insert pause
   /**
-  return Q.ninvoke(cmdQueue, "sendMessage", {
+  return Q.ninvoke(startCmdQueue, "sendMessage", {
     MessageBody: "start",
     DelaySeconds: 0
   }); 

@@ -16,6 +16,8 @@ var errHandler = function(err) {
 };
 var ecs = new AWS.ECS();
 var sqs = new AWS.SQS();
+var totalOps = 0;
+var maxTime = 0;
 
 var numTasks = 0;
 var queueUrls = {};
@@ -30,6 +32,9 @@ numTasks = parseInt(process.argv[2]);
 var queryStats = function() {
   if (numTasks <= 0) {
     console.log("Done");
+    console.log("Total Ops: " + totalOps);
+    console.log("Max Time (s): " + maxTime);
+    console.log("Throughput (ops/s): " + (totalOps / maxTime));
     return;
   }
 
@@ -40,9 +45,22 @@ var queryStats = function() {
   }).then(function(data) {
     if (data.Messages && data.Messages.length > 0) {
       numTasks--;
-      // @TODO
       // Process message 
-      console.log(data.Messages[0].Body); 
+      try {
+        var stats = JSON.parse(data.Messages[0].Body);
+        console.log(stats);
+        totalOps += stats.readCount;
+        totalOps += stats.writeCount;
+
+        var timeSpan = stats.endTime[0] - stats.startTime[0];
+        if (timeSpan > maxTime) {
+          maxTime = timeSpan;
+        }
+
+      } catch(e) {
+        console.error("Error parsing stats: " + e);
+        console.error(data.Messages[0].Body); 
+      }
 
       return Q.ninvoke(sqs, "deleteMessage", { 
         QueueUrl: queueUrls.stats,
@@ -57,12 +75,30 @@ var queryStats = function() {
   }).catch(errHandler);
 };
 
+var purgeQueue = function(queueName) {
+  Q.ninvoke(sqs, "receiveMessage", {
+    QueueUrl: queueUrls[queueName],
+    WaitTimeSeconds: 0,
+    MaxNumberOfMessages: 1
+  }).then(function(queueName, data) {
+    if (data.Messages && data.Messages.length > 0) {
+      purgeQueue(queueName);
+      return Q.ninvoke(sqs, "deleteMessage", {
+        QueueUrl: queueUrls[queueName],
+        ReceiptHandle: data.Messages[0].ReceiptHandle
+      });
+    }
+  }.bind({}, queueName)).catch(errHandler);
+};
+
 // Get queue URLs
 Q.ninvoke(sqs, "listQueues", {}).then(function(data) {
   
   for (var i = 0; i < data.QueueUrls.length; i++) {
-    if (data.QueueUrls[i].indexOf("commands") > -1) {
-      queueUrls.commands = data.QueueUrls[i];
+    if (data.QueueUrls[i].indexOf("startCmd") > -1) {
+      queueUrls.startCmd = data.QueueUrls[i];
+    } else if (data.QueueUrls[i].indexOf("stopCmd") > -1) {
+      queueUrls.stopCmd = data.QueueUrls[i];
     } else if (data.QueueUrls[i].indexOf("messages") > -1) {
       queueUrls.messages = data.QueueUrls[i];
     } else if (data.QueueUrls[i].indexOf("stats") > -1) {
@@ -72,7 +108,7 @@ Q.ninvoke(sqs, "listQueues", {}).then(function(data) {
   console.log(queueUrls);
 
   return Q.ninvoke(sqs, "sendMessage", {
-    QueueUrl: queueUrls.commands,
+    QueueUrl: queueUrls.stopCmd,
     MessageBody: "stop",
     DelaySeconds: 0
   });
@@ -81,5 +117,9 @@ Q.ninvoke(sqs, "listQueues", {}).then(function(data) {
   console.log(data);
   // Begin processing stats queue
   queryStats();
+  // Purge messages, startCmd, stopCmd queues
+  purgeQueue("messages");
+  purgeQueue("startCmd");
+  //purgeQueue("stopCmd");
 }).catch(errHandler);
 
