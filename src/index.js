@@ -7,6 +7,7 @@ var errHandler = function(err) { console.error("ERR:"+err); };
 var sqs = new AWS.SQS();
 
 var queueUrls = {};
+var pollingQueue = null;
 var writeRatio = 0;
 var readCount, writeCount;
 var startTime, endTime, duration;
@@ -20,35 +21,34 @@ writeRatio = parseFloat(process.argv[2]);
 
 // Wait for start and stop signals
 var pollCommands = function(isInit) {
-  var queue;
   if (isInit) {
-    queue = queueUrls.startCmd;
+    pollingQueue = queueUrls.startCmd;
     console.log("Polling for start");
   } else {
-    queue = queueUrls.stopCmd;
+    pollingQueue = queueUrls.stopCmd;
     console.log("Polling for stop");
   }
 
 
   Q.ninvoke(sqs, "receiveMessage", {
-    QueueUrl: queue,
+    QueueUrl: pollingQueue,
     WaitTimeSeconds: 20,
     MaxNumberOfMessages: 1
-  }).then(function(data) {
+  }).then(function(isInit, data) {
     // No message, poll again
     if (!data.Messages || data.Messages.length <= 0) {
-      pollCommands(isInit);
+      setTimeout(pollCommands.bind({}, isInit), 0);
       return;
     }
     // Got a start command, go go go. Begin polling for stop
     if (isInit) {
       console.log("START");
-      pollCommands(false);
+      setTimeout(pollCommands.bind({}, false), 0);
       running = true;
       startTime = process.hrtime();
       readCount = 0;
       writeCount = 0;
-      runExperiment();
+      setTimeout(runExperiment, 0);
     } else { // Got a stop command
       console.log("STOP");
       running = false; // Trigger experiment to stop
@@ -68,7 +68,7 @@ var pollCommands = function(isInit) {
         DelaySeconds: 0
       });
     }
-  }).catch(errHandler);
+  }.bind({}, isInit)).catch(errHandler);
 };
 
 var runExperiment = function() {
@@ -112,7 +112,11 @@ var runExperiment = function() {
         setTimeout(runExperiment, 0);
       }
     }).catch(errHandler);
-
+  }
+  
+  // Force garbage collection if exposed
+  if (global && global.gc) {
+    global.gc();
   }
 
 };
@@ -133,6 +137,6 @@ Q.ninvoke(sqs, "listQueues", {}).then(function(data) {
   console.log(queueUrls);
 
   // Wait for the start command
-  pollCommands(true);
+  setTimeout(pollCommands.bind({}, true), 0);
 }).catch(errHandler);
 

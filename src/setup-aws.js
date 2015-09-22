@@ -15,12 +15,15 @@ Q.ninvoke(ecs, "createCluster", {
     family: "radiatus",
     containerDefinitions: [{
       name: "radiatus",
-      image: "node",
+      image: "ryscheng/aws-sdk-playground",
       cpu: 1,
-      memory: 15,
+      memory: 40,
       essential: true,
       command: [
-        "node -v"
+        "node",
+        "--expose-gc",
+        "src/index.js",
+        "0.0"
       ]
     }],
     volumes: [
@@ -29,7 +32,7 @@ Q.ninvoke(ecs, "createCluster", {
 }).then(function(data) {
   console.log(data);
   return Q.ninvoke(ec2, "runInstances", {
-    DryRun: false,
+    DryRun: true,
     ImageId: "ami-b540eade",
     MinCount: 1,
     MaxCount: 1,
