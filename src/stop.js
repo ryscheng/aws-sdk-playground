@@ -16,8 +16,8 @@ var errHandler = function(err) {
 };
 var ecs = new AWS.ECS();
 var sqs = new AWS.SQS();
-var totalOps = 0;
-var maxTime = 0;
+var stats = {};
+var totalOps, maxTime;
 
 var numTasks = 0;
 var queueUrls = {};
@@ -30,7 +30,30 @@ if (process.argv.length < 3) {
 numTasks = parseInt(process.argv[2]);
 
 var queryStats = function() {
-  if (numTasks <= 0) {
+  if (Object.keys(stats).length >= numTasks) {
+    // Compute
+    totalOps = 0;
+    maxTime = 0;
+    for (var k in stats) {
+      if (stats.hasOwnProperty(k)) {
+        try {
+          var elt = JSON.parse(stats[k]);
+          //console.log(elt);
+          totalOps += elt.readCount;
+          totalOps += elt.writeCount;
+
+          var timeSpan = elt.endTime[0] - elt.startTime[0];
+          if (timeSpan > maxTime) {
+            maxTime = timeSpan;
+          }
+
+        } catch(e) {
+          console.error("Error parsing stats: " + e);
+          console.error(stats[k]); 
+        }
+      }
+    }
+
     console.log("Done");
     console.log("Total Ops: " + totalOps);
     console.log("Max Time (s): " + maxTime);
@@ -41,30 +64,22 @@ var queryStats = function() {
   Q.ninvoke(sqs, "receiveMessage", {
     QueueUrl: queueUrls.stats,
     WaitTimeSeconds: 20,
-    MaxNumberOfMessages: 1
+    MaxNumberOfMessages: 10
   }).then(function(data) {
     if (data.Messages && data.Messages.length > 0) {
-      numTasks--;
-      // Process message 
-      try {
-        var stats = JSON.parse(data.Messages[0].Body);
-        console.log(stats);
-        totalOps += stats.readCount;
-        totalOps += stats.writeCount;
-
-        var timeSpan = stats.endTime[0] - stats.startTime[0];
-        if (timeSpan > maxTime) {
-          maxTime = timeSpan;
-        }
-
-      } catch(e) {
-        console.error("Error parsing stats: " + e);
-        console.error(data.Messages[0].Body); 
+      // Cache message
+      var deleteEntries = [];
+      for (var i = 0; i < data.Messages.length; i++) {
+        stats[data.Messages[i].MessageId] = data.Messages[i].Body;
+        console.log(Object.keys(stats).length + ": " + data.Messages[i].Body);
+        deleteEntries.push({
+          Id: ""+i,
+          ReceiptHandle: data.Messages[i].ReceiptHandle
+        });
       }
-
-      return Q.ninvoke(sqs, "deleteMessage", { 
+      return Q.ninvoke(sqs, "deleteMessageBatch", { 
         QueueUrl: queueUrls.stats,
-        ReceiptHandle: data.Messages[0].ReceiptHandle
+        Entries: deleteEntries
       });
     } else {
       console.log("Still waiting. Trying again");

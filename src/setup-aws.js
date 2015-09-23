@@ -44,7 +44,7 @@ Q.ninvoke(ecs, "createCluster", {
       Arn: "arn:aws:iam::830863662461:instance-profile/ec2Role"
       //Name: "ec2Role"
     },
-    SubnetId: "subnet-9792dfbc"
+    //SubnetId: "subnet-9792dfbc"
   });
 }).then(function(data) {
   console.log(data);
